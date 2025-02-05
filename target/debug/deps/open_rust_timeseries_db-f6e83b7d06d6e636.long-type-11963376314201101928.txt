@@ -1,0 +1,6 @@
+hashbrown::raw::RawTable<(String, dashmap::util::SharedValue<Arc<LowLatencyMpmcRing<Vec<u8>>>>)>
+hashbrown::map::HashMap<String, dashmap::util::SharedValue<Arc<LowLatencyMpmcRing<Vec<u8>>>>, RandomState>
+lock_api::rwlock::RwLock<dashmap::lock::RawRwLock, hashbrown::map::HashMap<String, dashmap::util::SharedValue<Arc<LowLatencyMpmcRing<Vec<u8>>>>, RandomState>>
+[lock_api::rwlock::RwLock<dashmap::lock::RawRwLock, hashbrown::map::HashMap<String, dashmap::util::SharedValue<Arc<LowLatencyMpmcRing<Vec<u8>>>>, RandomState>>]
+Unique<[lock_api::rwlock::RwLock<dashmap::lock::RawRwLock, hashbrown::map::HashMap<String, dashmap::util::SharedValue<Arc<LowLatencyMpmcRing<Vec<u8>>>>, RandomState>>]>
+Box<[lock_api::rwlock::RwLock<dashmap::lock::RawRwLock, hashbrown::map::HashMap<String, dashmap::util::SharedValue<Arc<LowLatencyMpmcRing<Vec<u8>>>>, RandomState>>]>

@@ -1,0 +1,69 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+title Low-Latency MPMC In-Memory TimeSeries DB
+
+package "Memory" {
+    class LowLatencyMpmcRing<T> {
+        - buffer: Box<[Slot<T>]>
+        - capacity: usize
+        - mask: usize
+        - producer_index: AtomicUsize
+        - consumer_index: AtomicUsize
+        + try_enqueue(item: T): bool
+        + try_dequeue(): Option<T>
+        + is_empty(): bool
+        + is_full(): bool
+        + capacity(): usize
+    }
+
+    class Slot<T> {
+        - sequence: AtomicUsize
+        - value: UnsafeCell<Option<T>>
+    }
+}
+
+package "Storage" {
+    class Table {
+        - name: String
+        - field_buffers: DashMap<String, Arc<LowLatencyMpmcRing<Vec<u8>>>>
+        - field_configs: HashMap<String, FieldConfig>
+        - record_count: AtomicUsize
+        + write_record(data: &HashMap<String, Vec<u8>>): bool
+        + read_one_record(): Option<HashMap<String, Vec<u8>>>
+        + get_record_count(): usize
+    }
+
+    class FieldConfig {
+        + field_size_bytes: usize
+        + ring_capacity: usize
+    }
+
+    class TableConfig {
+        + fields: HashMap<String, FieldConfig>
+    }
+}
+
+note right of LowLatencyMpmcRing
+  Lock-free MPMC implementation
+  Microsecond latency
+  Zero-copy where possible
+  Sequence-based concurrency
+end note
+
+note right of Table
+  One ring buffer per field
+  Customizable ring sizes
+  In-memory only (ephemeral)
+  No persistence
+end note
+
+LowLatencyMpmcRing *-- "many" Slot
+Table *-- "many" LowLatencyMpmcRing
+Table *-- "1" TableConfig
+TableConfig *-- "many" FieldConfig
+
+@enduml
