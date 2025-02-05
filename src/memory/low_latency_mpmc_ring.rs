@@ -18,6 +18,23 @@ struct Slot<T> {
 unsafe impl<T: Send> Send for Slot<T> {}
 unsafe impl<T: Send> Sync for Slot<T> {}
 
+impl<T> Slot<T> {
+    #[inline(always)]
+    unsafe fn write(&self, val: T) {
+        (*self.value.get()).write(val);
+    }
+
+    #[inline(always)]
+    unsafe fn read(&self) -> T {
+        (*self.value.get()).assume_init_read()
+    }
+
+    #[inline(always)]
+    unsafe fn get_ref(&self) -> &T {
+        &*(*self.value.get()).as_ptr()
+    }
+}
+
 // Cache-line aligned ring buffer
 #[repr(align(64))]
 pub struct LowLatencyMpmcRing<T> {
@@ -59,7 +76,7 @@ impl<T> LowLatencyMpmcRing<T> {
     }
 
     #[inline(always)]
-    pub fn try_enqueue(&self, item: T) -> bool {
+    pub fn try_enqueue_ref(&self, item: T) -> bool {
         let mut spin_count = 0;
         loop {
             let seq = self.producer_index.load(Ordering::Acquire);
@@ -74,9 +91,9 @@ impl<T> LowLatencyMpmcRing<T> {
                     seq, seq.wrapping_add(1),
                     Ordering::AcqRel, Ordering::Relaxed
                 ).is_ok() {
-                    // Write the value
+                    // Direct write without intermediate copies
                     unsafe {
-                        (*slot.value.get()).write(item);
+                        slot.write(item);
                     }
                     fence(Ordering::Release);
                     slot.sequence.store(seq.wrapping_add(1), Ordering::Release);
@@ -97,7 +114,7 @@ impl<T> LowLatencyMpmcRing<T> {
     }
 
     #[inline(always)]
-    pub fn try_dequeue(&self) -> Option<T> {
+    pub fn try_dequeue_ref(&self) -> Option<&T> {
         let mut spin_count = 0;
         loop {
             let seq = self.consumer_index.load(Ordering::Acquire);
@@ -112,10 +129,8 @@ impl<T> LowLatencyMpmcRing<T> {
                     seq, seq.wrapping_add(1),
                     Ordering::AcqRel, Ordering::Relaxed
                 ).is_ok() {
-                    // Take ownership of the value
-                    let val = unsafe {
-                        (*slot.value.get()).assume_init_read()
-                    };
+                    // Zero-copy read
+                    let val = unsafe { slot.get_ref() };
                     fence(Ordering::Release);
                     slot.sequence.store(seq.wrapping_add(self.capacity), Ordering::Release);
                     return Some(val);
@@ -131,6 +146,19 @@ impl<T> LowLatencyMpmcRing<T> {
                     std::hint::spin_loop();
                 }
             }
+        }
+    }
+
+    // Keep existing methods for backward compatibility
+    #[inline(always)]
+    pub fn try_enqueue(&self, item: T) -> bool {
+        self.try_enqueue_ref(item)
+    }
+
+    #[inline(always)]
+    pub fn try_dequeue(&self) -> Option<T> {
+        unsafe {
+            self.try_dequeue_ref().map(|r| std::ptr::read(r as *const T))
         }
     }
 
