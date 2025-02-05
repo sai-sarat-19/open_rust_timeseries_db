@@ -1,0 +1,11 @@
+[package]
+name = "ultra_low_latency_db_test"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ultra_low_latency_db_test"
+path = "lib.rs"
+
+[dependencies]
+parking_lot = "0.12.1" 
