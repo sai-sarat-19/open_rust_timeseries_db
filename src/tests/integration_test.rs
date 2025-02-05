@@ -11,6 +11,8 @@ use std::sync::atomic::AtomicBool;
 use std::cell::RefCell;
 use crossbeam::queue::ArrayQueue;
 use std::arch::x86_64::*;
+use std::ptr;
+use std::sync::atomic::{fence};
 
 use crate::storage::table::{Table, TableConfig, FieldConfig};
 
@@ -218,7 +220,8 @@ impl PerformanceStats {
 struct DirectRecord {
     data: [u8; 64],
     len: usize,
-    _padding: [u8; 64 - std::mem::size_of::<usize>()],
+    field_offsets: [(usize, usize); 5], // (offset, length) for each field
+    _padding: [u8; 64 - std::mem::size_of::<usize>() - 40],
 }
 
 impl DirectRecord {
@@ -227,22 +230,49 @@ impl DirectRecord {
         Self {
             data: [0; 64],
             len: 0,
-            _padding: [0; 64 - std::mem::size_of::<usize>()],
+            field_offsets: [(0, 0); 5],
+            _padding: [0; 64 - std::mem::size_of::<usize>() - 40],
         }
     }
 
     #[inline(always)]
-    fn write_field(&mut self, offset: usize, data: &[u8]) -> usize {
+    fn write_field(&mut self, field_idx: usize, data: &[u8]) -> usize {
+        let offset = if field_idx == 0 { 0 } else { self.field_offsets[field_idx - 1].0 + self.field_offsets[field_idx - 1].1 };
         unsafe {
             std::ptr::copy_nonoverlapping(data.as_ptr(), self.data.as_mut_ptr().add(offset), data.len());
+            self.field_offsets[field_idx] = (offset, data.len());
             offset + data.len()
+        }
+    }
+
+    #[inline(always)]
+    fn get_field(&self, field_name: &str) -> Option<&[u8]> {
+        let field_idx = match field_name {
+            "symbol_id" => 0,
+            "price" => 1,
+            "quantity" => 2,
+            "timestamp" => 3,
+            "exchange_id" => 4,
+            _ => return None,
+        };
+        let (offset, len) = self.field_offsets[field_idx];
+        if len == 0 {
+            None
+        } else {
+            Some(unsafe { std::slice::from_raw_parts(self.data.as_ptr().add(offset), len) })
         }
     }
 
     #[inline(always)]
     fn to_hashmap(&self) -> HashMap<&'static str, Box<[u8]>> {
         let mut map = HashMap::with_capacity(5);
-        map.insert("data", self.data[..self.len].to_vec().into_boxed_slice());
+        for (field_name, idx) in [("symbol_id", 0), ("price", 1), ("quantity", 2), ("timestamp", 3), ("exchange_id", 4)] {
+            let (offset, len) = self.field_offsets[idx];
+            if len > 0 {
+                let slice = unsafe { std::slice::from_raw_parts(self.data.as_ptr().add(offset), len) };
+                map.insert(field_name, slice.to_vec().into_boxed_slice());
+            }
+        }
         map
     }
 }
@@ -315,10 +345,9 @@ fn record_to_direct(record: &HashMap<&str, &[u8]>) -> Option<DirectRecord> {
         let mut pool = pool.borrow_mut();
         pool.acquire().map(|mut direct_record| {
             let mut offset = 0;
-            // Copy fields in a fixed order for SIMD processing
-            for &field in &["symbol_id", "price", "quantity", "timestamp", "exchange_id"] {
+            for (idx, &field) in ["symbol_id", "price", "quantity", "timestamp", "exchange_id"].iter().enumerate() {
                 if let Some(data) = record.get(field) {
-                    offset = direct_record.write_field(offset, data);
+                    offset = direct_record.write_field(idx, data);
                 }
             }
             direct_record.len = offset;
@@ -418,7 +447,7 @@ fn test_full_market_data_system() {
 
                 let write_start = Instant::now();
                 let mut success = false;
-                let mut backoff = crossbeam::utils::Backoff::new();
+                let backoff = crossbeam::utils::Backoff::new();
                 
                 while !success && retry_count < MAX_RETRIES {
                     if table.write_record_ref(&record.as_ref_map()) {
@@ -798,4 +827,230 @@ mod latency_tests {
             println!("    P{:.2}: {} ns", p, metrics.percentile(p));
         }
     }
+}
+
+#[repr(C, align(64))]
+struct UltraLowLatencyRecord {
+    // Fixed layout for direct memory mapping
+    symbol_id: u32,  // 4 bytes
+    price: f64,      // 8 bytes
+    quantity: u32,   // 4 bytes
+    timestamp: u64,  // 8 bytes
+    flags: u8,       // 1 byte
+    _padding: [u8; 39], // Pad to cache line
+}
+
+// Pre-allocated ring buffer for zero-allocation writes
+#[repr(align(64))]
+struct ZeroAllocRingBuffer {
+    buffer: Box<[UltraLowLatencyRecord]>,
+    write_idx: AtomicU64,
+    read_idx: AtomicU64,
+    _pad: [u8; 40],
+}
+
+impl ZeroAllocRingBuffer {
+    #[inline(always)]
+    fn new(capacity: usize) -> Self {
+        let mut buffer = Vec::with_capacity(capacity);
+        buffer.resize_with(capacity, || UltraLowLatencyRecord {
+            symbol_id: 0,
+            price: 0.0,
+            quantity: 0,
+            timestamp: 0,
+            flags: 0,
+            _padding: [0; 39],
+        });
+        
+        Self {
+            buffer: buffer.into_boxed_slice(),
+            write_idx: AtomicU64::new(0),
+            read_idx: AtomicU64::new(0),
+            _pad: [0; 40],
+        }
+    }
+
+    // Direct memory write without any allocation
+    #[inline(always)]
+    unsafe fn write(&self, record: &UltraLowLatencyRecord) -> bool {
+        let idx = self.write_idx.load(Ordering::Relaxed) as usize;
+        let next_idx = (idx + 1) % self.buffer.len();
+        
+        // Check if buffer is full using raw pointer arithmetic
+        if next_idx == (self.read_idx.load(Ordering::Relaxed) as usize) {
+            return false;
+        }
+
+        // Direct memory copy using SIMD when available
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx2") {
+                let src = record as *const UltraLowLatencyRecord as *const __m256i;
+                let dst = self.buffer.as_ptr().add(idx) as *mut __m256i;
+                _mm256_stream_si256(dst, _mm256_load_si256(src));
+            } else {
+                ptr::copy_nonoverlapping(
+                    record as *const UltraLowLatencyRecord,
+                    self.buffer.as_ptr().add(idx) as *mut UltraLowLatencyRecord,
+                    1
+                );
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            ptr::copy_nonoverlapping(
+                record as *const UltraLowLatencyRecord,
+                self.buffer.as_ptr().add(idx) as *mut UltraLowLatencyRecord,
+                1
+            );
+        }
+
+        // Memory fence to ensure write is visible
+        fence(Ordering::Release);
+        self.write_idx.store(next_idx as u64, Ordering::Release);
+        true
+    }
+
+    // Zero-copy read with direct memory access
+    #[inline(always)]
+    unsafe fn read(&self) -> Option<&UltraLowLatencyRecord> {
+        let idx = self.read_idx.load(Ordering::Relaxed) as usize;
+        
+        // Check if buffer is empty using raw pointer arithmetic
+        if idx == self.write_idx.load(Ordering::Relaxed) as usize {
+            return None;
+        }
+
+        // Direct reference without copying
+        let record = &*self.buffer.as_ptr().add(idx);
+        self.read_idx.store(((idx + 1) % self.buffer.len()) as u64, Ordering::Release);
+        Some(record)
+    }
+}
+
+// Thread-local storage for ultra-low latency access
+thread_local! {
+    static LOCAL_BUFFER: RefCell<ZeroAllocRingBuffer> = RefCell::new(ZeroAllocRingBuffer::new(16384));
+}
+
+// Inline assembly for RDTSC with serialization
+#[inline(always)]
+unsafe fn rdtsc_serialized() -> u64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        core::arch::x86_64::_mm_mfence();
+        core::arch::x86_64::_mm_lfence();
+        let tsc = core::arch::x86_64::_rdtsc();
+        core::arch::x86_64::_mm_lfence();
+        tsc
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        0
+    }
+}
+
+// Ultra-low latency write path
+#[inline(always)]
+fn ultra_low_latency_write(record: &UltraLowLatencyRecord) -> bool {
+    LOCAL_BUFFER.with(|buffer| unsafe {
+        buffer.borrow().write(record)
+    })
+}
+
+// Ultra-low latency read path
+#[inline(always)]
+fn ultra_low_latency_read() -> Option<&'static UltraLowLatencyRecord> {
+    LOCAL_BUFFER.with(|buffer| unsafe {
+        // Transmute lifetime to static since the buffer lives for the thread lifetime
+        std::mem::transmute(buffer.borrow().read())
+    })
+}
+
+#[test]
+fn test_ultra_low_latency() {
+    println!("\nRunning Ultra-Low Latency Test");
+    println!("==============================");
+
+    // Warmup phase
+    let mut record = UltraLowLatencyRecord {
+        symbol_id: 1,
+        price: 100.0,
+        quantity: 1000,
+        timestamp: 0,
+        flags: 0,
+        _padding: [0; 39],
+    };
+
+    // Warmup to ensure CPU is at max frequency
+    for _ in 0..1_000_000 {
+        black_box(ultra_low_latency_write(&record));
+        black_box(ultra_low_latency_read());
+    }
+
+    let mut write_latencies = Vec::with_capacity(1_000_000);
+    let mut read_latencies = Vec::with_capacity(1_000_000);
+
+    // Measure write latency
+    for i in 0..1_000_000 {
+        record.timestamp = i as u64;
+        let start = unsafe { rdtsc_serialized() };
+        ultra_low_latency_write(&record);
+        let end = unsafe { rdtsc_serialized() };
+        write_latencies.push(end - start);
+    }
+
+    // Measure read latency
+    for _ in 0..1_000_000 {
+        let start = unsafe { rdtsc_serialized() };
+        let _ = ultra_low_latency_read();
+        let end = unsafe { rdtsc_serialized() };
+        read_latencies.push(end - start);
+    }
+
+    // Calculate statistics
+    write_latencies.sort_unstable();
+    read_latencies.sort_unstable();
+
+    let write_min = write_latencies[0];
+    let write_max = write_latencies[write_latencies.len() - 1];
+    let write_median = write_latencies[write_latencies.len() / 2];
+    let write_p99 = write_latencies[(write_latencies.len() as f64 * 0.99) as usize];
+    let write_p999 = write_latencies[(write_latencies.len() as f64 * 0.999) as usize];
+
+    let read_min = read_latencies[0];
+    let read_max = read_latencies[read_latencies.len() - 1];
+    let read_median = read_latencies[read_latencies.len() / 2];
+    let read_p99 = read_latencies[(read_latencies.len() as f64 * 0.99) as usize];
+    let read_p999 = read_latencies[(read_latencies.len() as f64 * 0.999) as usize];
+
+    println!("\nWrite Latencies (CPU cycles):");
+    println!("  Min: {}", write_min);
+    println!("  Median: {}", write_median);
+    println!("  P99: {}", write_p99);
+    println!("  P99.9: {}", write_p999);
+    println!("  Max: {}", write_max);
+
+    println!("\nRead Latencies (CPU cycles):");
+    println!("  Min: {}", read_min);
+    println!("  Median: {}", read_median);
+    println!("  P99: {}", read_p99);
+    println!("  P99.9: {}", read_p999);
+    println!("  Max: {}", read_max);
+
+    // Convert to nanoseconds (assuming 3GHz CPU)
+    let ns_per_cycle = 1.0 / 3.0;
+    println!("\nWrite Latencies (nanoseconds @ 3GHz):");
+    println!("  Min: {:.1} ns", write_min as f64 * ns_per_cycle);
+    println!("  Median: {:.1} ns", write_median as f64 * ns_per_cycle);
+    println!("  P99: {:.1} ns", write_p99 as f64 * ns_per_cycle);
+    println!("  P99.9: {:.1} ns", write_p999 as f64 * ns_per_cycle);
+    println!("  Max: {:.1} ns", write_max as f64 * ns_per_cycle);
+
+    println!("\nRead Latencies (nanoseconds @ 3GHz):");
+    println!("  Min: {:.1} ns", read_min as f64 * ns_per_cycle);
+    println!("  Median: {:.1} ns", read_median as f64 * ns_per_cycle);
+    println!("  P99: {:.1} ns", read_p99 as f64 * ns_per_cycle);
+    println!("  P99.9: {:.1} ns", read_p999 as f64 * ns_per_cycle);
+    println!("  Max: {:.1} ns", read_max as f64 * ns_per_cycle);
 } 
