@@ -2,25 +2,27 @@
 name = "ultra_low_latency_db"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
-description = "Ultra-low-latency in-memory database optimized for HFT"
-license = "MIT"
+
+[[bin]]
+name = "ultra_low_latency_db"
+path = "src2/main.rs"
+
+[lib]
+name = "ultra_low_latency_db"
+path = "src2/lib.rs"
 
 [dependencies]
-# Concurrent hash map implementation
+# Core dependencies
 dashmap = "5.5.3"
+crossbeam = "0.8.4"
+parking_lot = "0.12.1"
 
 [dev-dependencies]
-# For benchmarking
 criterion = "0.5.1"
 
-[[bench]]
-name = "latency_benchmark"
-harness = false
-
 [profile.release]
-# Optimizations for performance
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+debug = true  # Keep debug symbols for profiling
