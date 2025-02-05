@@ -3,21 +3,21 @@ use std::mem::MaybeUninit;
 use std::ptr;
 use std::hint::spin_loop;
 
-use crate::core::record::UltraLowLatencyRecord;
+use crate::core::config::UltraLowLatencyRecord;
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::{_mm256_stream_si256, __m256i, _mm256_load_si256};
 
 #[repr(align(64))]
-pub struct ZeroAllocRingBuffer {
-    buffer: Box<[MaybeUninit<UltraLowLatencyRecord>]>,
+pub struct ZeroAllocRingBuffer<T: UltraLowLatencyRecord> {
+    buffer: Box<[MaybeUninit<T>]>,
     capacity: usize,
     write_idx: AtomicU64,
     read_idx: AtomicU64,
     _pad: [u8; 40],
 }
 
-impl ZeroAllocRingBuffer {
+impl<T: UltraLowLatencyRecord> ZeroAllocRingBuffer<T> {
     pub fn new(capacity: usize) -> Self {
         let mut v = Vec::with_capacity(capacity);
         v.resize_with(capacity, || MaybeUninit::uninit());
@@ -33,7 +33,7 @@ impl ZeroAllocRingBuffer {
     /// Write a record directly into the ring buffer without allocation.
     /// Returns false if the ring is full.
     #[inline(always)]
-    pub unsafe fn write(&self, record: &UltraLowLatencyRecord) -> bool {
+    pub unsafe fn write(&self, record: &T) -> bool {
         let idx = self.write_idx.load(Ordering::Relaxed) as usize;
         let next_idx = (idx + 1) % self.capacity;
         
@@ -42,17 +42,22 @@ impl ZeroAllocRingBuffer {
             return false;
         }
 
-        // Use SIMD streaming if available on x86_64
+        // Validate record before writing
+        if !record.validate() {
+            return false;
+        }
+
+        // Use SIMD streaming if available on x86_64 and record size is appropriate
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx2") {
-                let src = record as *const UltraLowLatencyRecord as *const __m256i;
+            if is_x86_feature_detected!("avx2") && T::size_bytes() >= 32 {
+                let src = record as *const T as *const __m256i;
                 let dst = self.buffer.as_ptr().add(idx) as *mut __m256i;
                 _mm256_stream_si256(dst, _mm256_load_si256(src));
             } else {
                 ptr::copy_nonoverlapping(
-                    record as *const UltraLowLatencyRecord,
-                    self.buffer.as_ptr().add(idx) as *mut UltraLowLatencyRecord,
+                    record as *const T,
+                    self.buffer.as_ptr().add(idx) as *mut T,
                     1
                 );
             }
@@ -60,8 +65,8 @@ impl ZeroAllocRingBuffer {
         #[cfg(not(target_arch = "x86_64"))]
         {
             ptr::copy_nonoverlapping(
-                record as *const UltraLowLatencyRecord,
-                self.buffer.as_ptr().add(idx) as *mut UltraLowLatencyRecord,
+                record as *const T,
+                self.buffer.as_ptr().add(idx) as *mut T,
                 1
             );
         }
@@ -74,7 +79,7 @@ impl ZeroAllocRingBuffer {
     /// Read a record directly (zero-copy) from the ring buffer.
     /// Returns a reference to the record, or None if the ring is empty.
     #[inline(always)]
-    pub unsafe fn read(&self) -> Option<&UltraLowLatencyRecord> {
+    pub unsafe fn read(&self) -> Option<&T> {
         let idx = self.read_idx.load(Ordering::Relaxed) as usize;
         if idx == self.write_idx.load(Ordering::Relaxed) as usize {
             return None;
@@ -82,7 +87,7 @@ impl ZeroAllocRingBuffer {
         
         // Safety: We know the buffer is not empty and idx is valid
         let ptr = self.buffer.as_ptr().add(idx);
-        let record = &*(ptr as *const UltraLowLatencyRecord);
+        let record = &*(ptr as *const T);
         
         let next_idx = (idx + 1) % self.capacity;
         self.read_idx.store(next_idx as u64, Ordering::Release);
