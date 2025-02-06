@@ -1,88 +1,67 @@
 use std::sync::Arc;
-use crate::core::config::UltraLowLatencyRecord;
-use crate::core::index::{SymbolIndex, SymbolMetadata};
-use crate::memory::zero_alloc_ring_buffer::ZeroAllocRingBuffer;
+use crate::core::{
+    config::UltraLowLatencyRecord,
+    instrument_index::InstrumentBufferConfig,
+};
+use crate::memory::{
+    instrument_buffer::{InstrumentBufferManager, BufferType},
+};
 
-/// A thread-safe, ultra-low-latency database.
-/// Can be either owned or referenced, with methods supporting both patterns.
+/// A thread-safe, ultra-low-latency database with instrument-specific buffers
 #[derive(Clone)]
 pub struct UltraLowLatencyDB<T: UltraLowLatencyRecord> {
-    ring: Arc<ZeroAllocRingBuffer<T>>,
-    symbol_index: Arc<SymbolIndex>,
+    buffer_manager: Arc<InstrumentBufferManager<T>>,
 }
 
 impl<T: UltraLowLatencyRecord> UltraLowLatencyDB<T> {
     pub fn new(capacity: usize) -> Self {
+        let config = InstrumentBufferConfig::default();
+        Self::with_config(capacity, config)
+    }
+
+    pub fn with_config(capacity: usize, config: InstrumentBufferConfig) -> Self {
         Self {
-            ring: Arc::new(ZeroAllocRingBuffer::new(capacity)),
-            symbol_index: Arc::new(SymbolIndex::new()),
+            buffer_manager: Arc::new(InstrumentBufferManager::new(capacity, config)),
         }
     }
 
-    /// Register a new symbol with metadata
-    pub fn register_symbol(&self, symbol_id: u32, metadata: SymbolMetadata) {
-        self.symbol_index.register_symbol(symbol_id, metadata);
-    }
-
-    /// Write a record into the DB. Returns false if the ring is full.
-    /// This method can be called on either an owned DB or a reference.
+    /// Write a record to the L1 price buffer for the specified instrument
     #[inline(always)]
     pub fn write(&self, record: &T) -> bool {
-        let success = unsafe { self.ring.write(record) };
-        if success {
-            // Update symbol index with the current write position
-            if let Some(symbol_id) = record.get_symbol_id() {
-                self.symbol_index.update_position(symbol_id, self.ring.write_position());
-            }
+        unsafe {
+            self.buffer_manager.write(record.symbol_id(), record, BufferType::L1Price)
         }
-        success
     }
 
-    /// Read a record from the DB. Returns a copy of the record if available.
-    /// This method can be called on either an owned DB or a reference.
+    /// Read a record from the L1 price buffer for the specified instrument
     #[inline(always)]
     pub fn read(&self) -> Option<T> {
-        unsafe { self.ring.read().map(|r| *r) }
-    }
-
-    /// Read the latest record for a specific symbol
-    #[inline(always)]
-    pub fn read_symbol(&self, symbol_id: u32) -> Option<T> {
-        if let Some(position) = self.symbol_index.get_position(symbol_id) {
-            unsafe { self.ring.read_at(position) }
-        } else {
-            None
+        unsafe {
+            // For now, just read from the first registered instrument
+            // In practice, you'd want to specify which instrument to read from
+            let token = self.buffer_manager.index().get_first_token()?;
+            self.buffer_manager.read(token, BufferType::L1Price)
         }
     }
 
-    /// Get metadata for a symbol
-    pub fn get_symbol_metadata(&self, symbol_id: u32) -> Option<SymbolMetadata> {
-        self.symbol_index.get_metadata(symbol_id)
+    /// Write a record to a specific buffer type for an instrument
+    #[inline]
+    pub fn write_to_buffer(&self, token: u32, record: &T, buffer_type: BufferType) -> bool {
+        unsafe {
+            self.buffer_manager.write(token, record, buffer_type)
+        }
     }
 
-    /// Get all registered symbols
-    pub fn get_all_symbols(&self) -> Vec<u32> {
-        self.symbol_index.get_all_symbols()
+    /// Read a record from a specific buffer type for an instrument
+    #[inline]
+    pub fn read_from_buffer(&self, token: u32, buffer_type: BufferType) -> Option<T> {
+        unsafe {
+            self.buffer_manager.read(token, buffer_type)
+        }
     }
 
-    #[inline(always)]
-    pub fn is_full(&self) -> bool {
-        self.ring.is_full()
-    }
-
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.ring.is_empty()
-    }
-
-    #[inline(always)]
-    pub fn capacity(&self) -> usize {
-        self.ring.capacity()
-    }
-
-    /// Get a reference to this DB that can be safely shared across threads
-    #[inline(always)]
-    pub fn as_ref(&self) -> &Self {
-        self
+    /// Get the buffer manager for direct access
+    pub fn buffer_manager(&self) -> &Arc<InstrumentBufferManager<T>> {
+        &self.buffer_manager
     }
 } 

@@ -40,4 +40,7 @@ pub trait UltraLowLatencyRecord: Clone + Copy + Send + Sync + 'static {
     
     /// Create from bytes when reading
     unsafe fn from_bytes(bytes: &[u8]) -> Self;
+
+    /// Get the instrument/symbol identifier
+    fn symbol_id(&self) -> u32;
 } 

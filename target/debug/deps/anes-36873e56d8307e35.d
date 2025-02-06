@@ -1,0 +1,12 @@
+/home/ubuntu/open_rust_timeseries_db-1/target/debug/deps/libanes-36873e56d8307e35.rmeta: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/macros.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/attribute.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/buffer.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/color.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/cursor.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/terminal.rs
+
+/home/ubuntu/open_rust_timeseries_db-1/target/debug/deps/anes-36873e56d8307e35.d: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/macros.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/attribute.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/buffer.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/color.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/cursor.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/terminal.rs
+
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/lib.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/macros.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/attribute.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/buffer.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/color.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/cursor.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anes-0.1.6/src/sequences/terminal.rs:

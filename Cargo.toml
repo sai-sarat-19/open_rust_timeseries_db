@@ -26,3 +26,5 @@ lto = true
 codegen-units = 1
 panic = "abort"
 debug = true  # Keep debug symbols for profiling
+crossbeam = "0.8"
+core_affinity = "0.8"

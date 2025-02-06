@@ -94,4 +94,8 @@ impl UltraLowLatencyRecord for MarketDataRecord {
         assert!(bytes.len() >= mem::size_of::<Self>());
         *(bytes.as_ptr() as *const Self)
     }
+
+    fn symbol_id(&self) -> u32 {
+        self.symbol_id
+    }
 } 

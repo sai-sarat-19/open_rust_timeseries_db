@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering, fence};
 use std::mem::MaybeUninit;
 use std::ptr;
 use std::hint::spin_loop;
+use std::marker::PhantomData;
 
 use crate::core::config::UltraLowLatencyRecord;
 
