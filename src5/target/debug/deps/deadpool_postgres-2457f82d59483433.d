@@ -1,0 +1,10 @@
+/home/ubuntu/open_rust_timeseries_db-1/src5/target/debug/deps/libdeadpool_postgres-2457f82d59483433.rmeta: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/config.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/generic_client.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/../README.md
+
+/home/ubuntu/open_rust_timeseries_db-1/src5/target/debug/deps/libdeadpool_postgres-2457f82d59483433.rlib: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/config.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/generic_client.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/../README.md
+
+/home/ubuntu/open_rust_timeseries_db-1/src5/target/debug/deps/deadpool_postgres-2457f82d59483433.d: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/config.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/generic_client.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/../README.md
+
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/lib.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/config.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/generic_client.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/deadpool-postgres-0.12.1/src/../README.md:

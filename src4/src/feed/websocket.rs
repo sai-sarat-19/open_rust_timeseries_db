@@ -62,6 +62,34 @@ async fn handle_connection(
     // Send initial heartbeat
     write.send(serde_json::to_string(&create_heartbeat())?.into()).await?;
     
+    // Create a channel for message processing with backpressure
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<FeedMessage>(1000);
+    
+    // Spawn message processing task
+    let market_data_clone = Arc::clone(&market_data);
+    let stats_clone = Arc::clone(&stats);
+    let process_task = tokio::spawn(async move {
+        while let Some(feed_msg) = rx.recv().await {
+            let start = std::time::Instant::now();
+            
+            if let Err(e) = market_data_clone.process_feed_message(feed_msg.clone()).await {
+                tracing::error!("Error processing message: {}", e);
+                stats_clone.write().invalid_messages += 1;
+            } else {
+                // Publish to Redis directly
+                if let Some(redis) = market_data_clone.get_redis() {
+                    if let Err(e) = redis.publish_message("market_data", &feed_msg).await {
+                        tracing::error!("Error publishing to Redis: {}", e);
+                    }
+                }
+                
+                let mut stats = stats_clone.write();
+                stats.messages_processed += 1;
+                stats.processing_time_ns += start.elapsed().as_nanos() as u64;
+            }
+        }
+    });
+    
     while let Some(msg) = read.next().await {
         let msg = msg?;
         
@@ -70,29 +98,13 @@ async fn handle_connection(
         
         // Process message
         if msg.is_text() {
-            let start = std::time::Instant::now();
-            
             match serde_json::from_str::<FeedMessage>(msg.to_text()?) {
                 Ok(feed_msg) => {
                     if feed_msg.is_valid() {
-                        // Clone the message for Redis publishing
-                        let redis_msg = feed_msg.clone();
-                        
-                        // Process the message
-                        if let Err(e) = market_data.process_feed_message(feed_msg).await {
-                            tracing::error!("Error processing message: {}", e);
+                        // Send to processing channel with backpressure
+                        if let Err(e) = tx.send(feed_msg).await {
+                            tracing::error!("Error sending to processing channel: {}", e);
                             stats.write().invalid_messages += 1;
-                        } else {
-                            // Publish to Redis directly
-                            if let Some(redis) = market_data.get_redis() {
-                                if let Err(e) = redis.publish_message("market_data", &redis_msg).await {
-                                    tracing::error!("Error publishing to Redis: {}", e);
-                                }
-                            }
-                            
-                            let mut stats = stats.write();
-                            stats.messages_processed += 1;
-                            stats.processing_time_ns += start.elapsed().as_nanos() as u64;
                         }
                     } else {
                         stats.write().invalid_messages += 1;
@@ -104,6 +116,12 @@ async fn handle_connection(
                 }
             }
         }
+    }
+    
+    // Wait for processing to complete
+    drop(tx);
+    if let Err(e) = process_task.await {
+        tracing::error!("Error in message processing task: {}", e);
     }
     
     Ok(())

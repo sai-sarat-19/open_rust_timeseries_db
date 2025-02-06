@@ -1,0 +1,59 @@
+[package]
+name = "ultra_low_latency_feed_v5"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core dependencies
+tokio = { version = "1.36", features = ["full"] }
+futures = "0.3"
+parking_lot = "0.12"
+dashmap = "5.5"
+
+# WebSocket and networking
+tokio-tungstenite = "0.21"
+tungstenite = "0.21"
+url = "2.5"
+
+# Database and storage
+redis = { version = "0.24", features = ["tokio-comp"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
+deadpool-postgres = "0.12"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Compression and data handling
+lz4 = "1.24"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Metrics and monitoring
+metrics = "0.21"
+metrics-exporter-prometheus = "0.12"
+
+# Logging and error handling
+tracing = "0.1"
+tracing-subscriber = "0.3"
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Memory and performance
+memmap2 = "0.9"
+crossbeam = "0.8"
+num_cpus = "1.16"
+
+[dev-dependencies]
+criterion = "0.5"
+tokio-test = "0.4"
+mockall = "0.12"
+
+[features]
+default = ["websocket", "redis", "postgres"]
+websocket = []
+redis = []
+postgres = []
+
+[[bench]]
+name = "feed_benchmarks"
+harness = false 
