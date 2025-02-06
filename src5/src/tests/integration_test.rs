@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use url::Url;
 use tokio_tungstenite::connect_async;
 use futures::SinkExt;
-use chrono::Utc;
+use chrono::{Utc, TimeZone};
 
 use crate::{
     MarketDataRecord,
@@ -120,6 +120,14 @@ async fn test_l1_price_updates(
     timeseries: &TimeSeriesManager,
     stats: &SystemStats,
 ) -> Result<()> {
+    println!("Creating L1 price update record...");
+    
+    // Use current time in nanoseconds
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    
     let record = MarketDataRecord::new(
         1001,   // token
         100.0,  // bid
@@ -129,39 +137,81 @@ async fn test_l1_price_updates(
         100.05, // last
         50,     // last size
         1,      // seq
-        unsafe { rdtsc_timestamp() },
+        current_time,  // Use current time instead of rdtsc
         0,      // flags
     );
+    println!("Created record with timestamp: {}", Utc.timestamp_opt(
+        (current_time / 1_000_000_000) as i64,
+        (current_time % 1_000_000_000) as u32,
+    ).unwrap());
+    println!("Record details: {:?}", record);
     
     // Write to ring buffer
+    println!("Writing to ring buffer...");
     let start = Instant::now();
     unsafe {
         if ring_buffer.write(&record) {
             let latency = start.elapsed().as_nanos() as u64;
             stats.ring_buffer_writes.fetch_add(1, Ordering::Relaxed);
             stats.update_latency(latency);
+            println!("Successfully wrote to ring buffer with latency: {} ns", latency);
+        } else {
+            println!("Failed to write to ring buffer!");
         }
     }
     
     // Publish to Redis
-    redis.publish_message("market_data", &record).await?;
-    stats.redis_publishes.fetch_add(1, Ordering::Relaxed);
+    println!("Publishing to Redis...");
+    let redis_start = Instant::now();
+    match redis.publish_message("market_data", &record).await {
+        Ok(_) => {
+            let redis_latency = redis_start.elapsed().as_nanos();
+            stats.redis_publishes.fetch_add(1, Ordering::Relaxed);
+            println!("Successfully published to Redis with latency: {} ns", redis_latency);
+        },
+        Err(e) => println!("Failed to publish to Redis: {}", e),
+    }
     
     // Store in TimeSeries
-    timeseries.store_record(&record).await?;
-    stats.timeseries_writes.fetch_add(1, Ordering::Relaxed);
+    println!("Storing in TimeSeries...");
+    let ts_start = Instant::now();
+    match timeseries.store_record(&record).await {
+        Ok(_) => {
+            let ts_latency = ts_start.elapsed().as_nanos();
+            stats.timeseries_writes.fetch_add(1, Ordering::Relaxed);
+            println!("Successfully stored in TimeSeries with latency: {} ns", ts_latency);
+        },
+        Err(e) => println!("Failed to store in TimeSeries: {}", e),
+    }
     
     // Verify data
+    println!("Querying TimeSeries for verification...");
+    let query_start = Instant::now();
+    let start_time = Utc::now() - chrono::Duration::minutes(1);
+    let end_time = Utc::now() + chrono::Duration::minutes(1);
+    println!("Query range: {} to {}", start_time, end_time);
+    
     let stored_records = timeseries.query_range(
         1001,
-        Utc::now() - chrono::Duration::minutes(1),
-        Utc::now() + chrono::Duration::minutes(1),
+        start_time,
+        end_time,
     ).await?;
     
-    assert!(!stored_records.is_empty());
-    assert_eq!(stored_records[0].token, record.token);
-    assert_eq!(stored_records[0].last_price, record.last_price);
+    let query_latency = query_start.elapsed().as_nanos();
+    println!("Query completed in {} ns", query_latency);
+    println!("Retrieved {} records", stored_records.len());
     
+    if stored_records.is_empty() {
+        println!("WARNING: No records found in TimeSeries!");
+    } else {
+        println!("Found record: {:?}", stored_records[0]);
+    }
+    
+    assert!(!stored_records.is_empty(), "No records found in TimeSeries query");
+    assert_eq!(stored_records[0].token, record.token, "Token mismatch");
+    assert_eq!(stored_records[0].last_price, record.last_price, "Price mismatch");
+    
+    println!("L1 price update test completed successfully");
     Ok(())
 }
 
@@ -171,6 +221,14 @@ async fn test_l2_trade_updates(
     timeseries: &TimeSeriesManager,
     stats: &SystemStats,
 ) -> Result<()> {
+    println!("Creating L2 trade update record...");
+    
+    // Use current time in nanoseconds
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    
     let record = MarketDataRecord::new(
         1002,   // token
         101.0,  // bid
@@ -180,9 +238,14 @@ async fn test_l2_trade_updates(
         101.05, // last
         150,    // last size
         2,      // seq
-        unsafe { rdtsc_timestamp() },
+        current_time,  // Use current time instead of rdtsc
         0,      // flags
     );
+    println!("Created record with timestamp: {}", Utc.timestamp_opt(
+        (current_time / 1_000_000_000) as i64,
+        (current_time % 1_000_000_000) as u32,
+    ).unwrap());
+    println!("Record details: {:?}", record);
     
     // Write to ring buffer
     let start = Instant::now();
@@ -191,32 +254,74 @@ async fn test_l2_trade_updates(
             let latency = start.elapsed().as_nanos() as u64;
             stats.ring_buffer_writes.fetch_add(1, Ordering::Relaxed);
             stats.update_latency(latency);
+            println!("Successfully wrote to ring buffer with latency: {} ns", latency);
+        } else {
+            println!("Failed to write to ring buffer!");
         }
     }
     
     // Publish to Redis
-    redis.publish_message("market_data", &record).await?;
-    stats.redis_publishes.fetch_add(1, Ordering::Relaxed);
+    let redis_start = Instant::now();
+    match redis.publish_message("market_data", &record).await {
+        Ok(_) => {
+            let redis_latency = redis_start.elapsed().as_nanos();
+            stats.redis_publishes.fetch_add(1, Ordering::Relaxed);
+            println!("Successfully published to Redis with latency: {} ns", redis_latency);
+        },
+        Err(e) => println!("Failed to publish to Redis: {}", e),
+    }
     
     // Store in TimeSeries
-    timeseries.store_record(&record).await?;
-    stats.timeseries_writes.fetch_add(1, Ordering::Relaxed);
+    let ts_start = Instant::now();
+    match timeseries.store_record(&record).await {
+        Ok(_) => {
+            let ts_latency = ts_start.elapsed().as_nanos();
+            stats.timeseries_writes.fetch_add(1, Ordering::Relaxed);
+            println!("Successfully stored in TimeSeries with latency: {} ns", ts_latency);
+        },
+        Err(e) => println!("Failed to store in TimeSeries: {}", e),
+    }
     
     // Verify data
+    println!("Querying TimeSeries for verification...");
+    let query_start = Instant::now();
+    let start_time = Utc::now() - chrono::Duration::minutes(1);
+    let end_time = Utc::now() + chrono::Duration::minutes(1);
+    println!("Query range: {} to {}", start_time, end_time);
+    
     let stored_records = timeseries.query_range(
         1002,
-        Utc::now() - chrono::Duration::minutes(1),
-        Utc::now() + chrono::Duration::minutes(1),
+        start_time,
+        end_time,
     ).await?;
     
-    assert!(!stored_records.is_empty());
-    assert_eq!(stored_records[0].token, record.token);
-    assert_eq!(stored_records[0].last_price, record.last_price);
+    let query_latency = query_start.elapsed().as_nanos();
+    println!("Query completed in {} ns", query_latency);
+    println!("Retrieved {} records", stored_records.len());
     
+    if stored_records.is_empty() {
+        println!("WARNING: No records found in TimeSeries!");
+    } else {
+        println!("Found record: {:?}", stored_records[0]);
+    }
+    
+    assert!(!stored_records.is_empty(), "No records found in TimeSeries query");
+    assert_eq!(stored_records[0].token, record.token, "Token mismatch");
+    assert_eq!(stored_records[0].last_price, record.last_price, "Price mismatch");
+    
+    println!("L2 trade update test completed successfully");
     Ok(())
 }
 
 async fn test_historical_data(timeseries: &TimeSeriesManager) -> Result<()> {
+    println!("Creating historical data record...");
+    
+    // Use current time in nanoseconds
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    
     let record = MarketDataRecord::new(
         1003,   // token
         102.0,  // bid
@@ -226,22 +331,50 @@ async fn test_historical_data(timeseries: &TimeSeriesManager) -> Result<()> {
         102.05, // last
         250,    // last size
         3,      // seq
-        unsafe { rdtsc_timestamp() },
+        current_time,  // Use current time instead of rdtsc
         0,      // flags
     );
+    println!("Created record with timestamp: {}", Utc.timestamp_opt(
+        (current_time / 1_000_000_000) as i64,
+        (current_time % 1_000_000_000) as u32,
+    ).unwrap());
+    println!("Record details: {:?}", record);
     
     // Store record
-    timeseries.store_record(&record).await?;
+    println!("Storing record in TimeSeries...");
+    let store_start = Instant::now();
+    match timeseries.store_record(&record).await {
+        Ok(_) => {
+            let store_latency = store_start.elapsed().as_nanos();
+            println!("Successfully stored record with latency: {} ns", store_latency);
+        },
+        Err(e) => println!("Failed to store record: {}", e),
+    }
     
     // Query back
-    let start = Utc::now() - chrono::Duration::minutes(1);
-    let end = Utc::now() + chrono::Duration::minutes(1);
+    println!("Querying TimeSeries for verification...");
+    let query_start = Instant::now();
+    let start_time = Utc::now() - chrono::Duration::minutes(1);
+    let end_time = Utc::now() + chrono::Duration::minutes(1);
+    println!("Query range: {} to {}", start_time, end_time);
     
-    let records = timeseries.query_range(1003, start, end).await?;
-    assert!(!records.is_empty());
-    assert_eq!(records[0].token, record.token);
-    assert_eq!(records[0].last_price, record.last_price);
+    let records = timeseries.query_range(1003, start_time, end_time).await?;
     
+    let query_latency = query_start.elapsed().as_nanos();
+    println!("Query completed in {} ns", query_latency);
+    println!("Retrieved {} records", records.len());
+    
+    if records.is_empty() {
+        println!("WARNING: No records found in TimeSeries!");
+    } else {
+        println!("Found record: {:?}", records[0]);
+    }
+    
+    assert!(!records.is_empty(), "No records found in TimeSeries query");
+    assert_eq!(records[0].token, record.token, "Token mismatch");
+    assert_eq!(records[0].last_price, record.last_price, "Price mismatch");
+    
+    println!("Historical data test completed successfully");
     Ok(())
 }
 

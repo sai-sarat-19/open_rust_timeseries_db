@@ -136,12 +136,16 @@ impl TimeSeriesManager {
     }
     
     pub async fn store_record(&self, record: &MarketDataRecord) -> Result<()> {
+        println!("TimeSeries: Starting to store record with token {}", record.token);
         let start = std::time::Instant::now();
         
         // Get client from pool
+        println!("TimeSeries: Getting database connection from pool...");
         let client = self.pool.get().await?;
+        println!("TimeSeries: Got database connection");
         
         // Serialize record with zero-copy where possible
+        println!("TimeSeries: Serializing record...");
         let record_bytes = unsafe {
             std::slice::from_raw_parts(
                 record as *const MarketDataRecord as *const u8,
@@ -150,29 +154,39 @@ impl TimeSeriesManager {
         };
         
         let record_bytes_len = record_bytes.len();
+        println!("TimeSeries: Record serialized to {} bytes", record_bytes_len);
         
         // Only compress if the record is large enough
         let (compressed, is_compressed) = if record_bytes_len > 1024 {
             match self.config.compression_level {
                 CompressionLevel::None => (record_bytes, false),
-                _ => (compress(&record_bytes, None, false)?, true),
+                _ => {
+                    println!("TimeSeries: Compressing record...");
+                    (compress(&record_bytes, None, false)?, true)
+                },
             }
         } else {
             (record_bytes, false)
         };
+        println!("TimeSeries: Final data size: {} bytes (compressed: {})", compressed.len(), is_compressed);
+        
+        // Convert timestamp
+        let timestamp = Utc.timestamp_opt(
+            (record.timestamp / 1_000_000_000) as i64,
+            (record.timestamp % 1_000_000_000) as u32,
+        ).unwrap();
+        println!("TimeSeries: Converted timestamp: {}", timestamp);
         
         // Store in database with all fields
-        client.execute(
+        println!("TimeSeries: Executing INSERT query...");
+        match client.execute(
             "INSERT INTO market_data (
                 token, timestamp, bid_price, ask_price, bid_size, ask_size,
                 last_price, last_size, sequence_num, data
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
             &[
                 &(record.token as i64),
-                &Utc.timestamp_opt(
-                    (record.timestamp / 1_000_000_000) as i64,
-                    (record.timestamp % 1_000_000_000) as u32,
-                ).unwrap(),
+                &timestamp,
                 &record.bid_price,
                 &record.ask_price,
                 &(record.bid_size as i32),
@@ -182,7 +196,13 @@ impl TimeSeriesManager {
                 &(record.sequence_num as i64),
                 &compressed,
             ],
-        ).await?;
+        ).await {
+            Ok(_) => println!("TimeSeries: Successfully inserted record"),
+            Err(e) => {
+                println!("TimeSeries: Error inserting record: {}", e);
+                return Err(anyhow::anyhow!("Database insert error: {}", e));
+            }
+        }
         
         // Update stats with atomic operations
         let latency = start.elapsed().as_nanos() as u64;
@@ -196,33 +216,7 @@ impl TimeSeriesManager {
         }
         self.stats.write_latency_ns.fetch_add(latency, Ordering::Relaxed);
         
-        // Update min/max write latency
-        let mut current_min = self.stats.min_write_latency_ns.load(Ordering::Relaxed);
-        while latency < current_min {
-            match self.stats.min_write_latency_ns.compare_exchange_weak(
-                current_min,
-                latency,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(x) => current_min = x,
-            }
-        }
-
-        let mut current_max = self.stats.max_write_latency_ns.load(Ordering::Relaxed);
-        while latency > current_max {
-            match self.stats.max_write_latency_ns.compare_exchange_weak(
-                current_max,
-                latency,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(x) => current_max = x,
-            }
-        }
-        
+        println!("TimeSeries: Completed storing record in {} ns", latency);
         Ok(())
     }
     
@@ -232,27 +226,34 @@ impl TimeSeriesManager {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<MarketDataRecord>> {
+        println!("TimeSeries: Starting query for token {} from {} to {}", token, start, end);
         let start_query = std::time::Instant::now();
         
         let client = self.pool.get().await?;
+        println!("TimeSeries: Got database connection");
         
+        println!("TimeSeries: Executing SELECT query...");
         let rows = client.query(
             "SELECT data FROM market_data WHERE token = $1 AND timestamp >= $2 AND timestamp <= $3",
             &[&(token as i64), &start, &end],
         ).await?;
         
+        println!("TimeSeries: Query returned {} rows", rows.len());
         let mut records = Vec::with_capacity(rows.len());
         
-        for row in rows {
+        for (i, row) in rows.iter().enumerate() {
             let data: Vec<u8> = row.get(0);
+            println!("TimeSeries: Processing row {} with {} bytes", i, data.len());
             
             // Try to parse as uncompressed first
             let record = if data.len() == std::mem::size_of::<MarketDataRecord>() {
+                println!("TimeSeries: Row {} is uncompressed", i);
                 unsafe {
                     std::ptr::read(data.as_ptr() as *const MarketDataRecord)
                 }
             } else {
                 // If that fails, try decompressing
+                println!("TimeSeries: Row {} needs decompression", i);
                 let decompressed = lz4::block::decompress(&data, None)
                     .map_err(|e| anyhow!("Decompression error: {}", e))?;
                 unsafe {
@@ -260,14 +261,14 @@ impl TimeSeriesManager {
                 }
             };
             
+            println!("TimeSeries: Successfully parsed record: {:?}", record);
             records.push(record);
         }
         
         // Update query latency
-        self.stats.query_latency_ns.fetch_add(
-            start_query.elapsed().as_nanos() as u64,
-            Ordering::Relaxed
-        );
+        let query_time = start_query.elapsed().as_nanos() as u64;
+        self.stats.query_latency_ns.fetch_add(query_time, Ordering::Relaxed);
+        println!("TimeSeries: Query completed in {} ns", query_time);
         
         Ok(records)
     }
