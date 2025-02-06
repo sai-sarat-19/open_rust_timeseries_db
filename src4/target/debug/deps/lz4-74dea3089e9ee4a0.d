@@ -1,0 +1,12 @@
+/home/ubuntu/open_rust_timeseries_db-1/src4/target/debug/deps/liblz4-74dea3089e9ee4a0.rmeta: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/liblz4.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/decoder.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/encoder.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/block/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/../README.md
+
+/home/ubuntu/open_rust_timeseries_db-1/src4/target/debug/deps/liblz4-74dea3089e9ee4a0.rlib: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/liblz4.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/decoder.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/encoder.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/block/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/../README.md
+
+/home/ubuntu/open_rust_timeseries_db-1/src4/target/debug/deps/lz4-74dea3089e9ee4a0.d: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/liblz4.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/decoder.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/encoder.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/block/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/../README.md
+
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/lib.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/liblz4.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/decoder.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/encoder.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/block/mod.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/lz4-1.28.1/src/../README.md:
